@@ -1,0 +1,53 @@
+import json
+import logging
+
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def lambda_handler(event, context):
+    # Log the incoming event
+    logger.info("Received event: %s", json.dumps(event))
+    
+    # List of chatbot features
+    intents = [
+        "Course Information",
+        "Contact Details",
+        "Request a Demo"
+    ]
+    
+    # Create a formatted response
+    features_list = "\n".join([f"- {intent}" for intent in intents])
+    response_message = (
+        "I can help you with the following:\n"
+        f"{features_list}\n\n"
+        "Type or select one to get started!"
+    )
+    
+    # Log the response message
+    logger.info("Response message: %s", response_message)
+    
+    # Return the response in Lex V2 format
+    response = {
+        "sessionState": {
+            "sessionAttributes": event.get("sessionState", {}).get("sessionAttributes", {}),
+            "dialogAction": {
+                "type": "Close"
+            },
+            "intent": {
+                "name": event["sessionState"]["intent"]["name"],
+                "state": "Fulfilled"
+            }
+        },
+        "messages": [
+            {
+                "contentType": "PlainText",
+                "content": response_message
+            }
+        ]
+    }
+    
+    # Log the final response for debugging
+    logger.info("Response to Lex: %s", json.dumps(response))
+    
+    return response

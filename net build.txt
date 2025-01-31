@@ -1,0 +1,95 @@
+{
+    "inputMode": "Text",
+    "sessionId": "207567756194525",
+    "inputTranscript": "demo",
+    "interpretations": [
+        {
+            "interpretationSource": "Lex",
+            "nluConfidence": 1.0,
+            "intent": {
+                "name": "DemoRequest",
+                "slots": {"CourseName": None, "UserName": None, "PreferredDate": None},
+                "state": "InProgress",
+                "confirmationState": "None",
+            },
+        },
+        {
+            "interpretationSource": "Lex",
+            "nluConfidence": 0.58,
+            "intent": {
+                "name": "ContactDetails",
+                "slots": {"Address": None, "contact": None, "email": None},
+                "state": "InProgress",
+                "confirmationState": "None",
+            },
+        },
+        {
+            "interpretationSource": "Lex",
+            "nluConfidence": 0.52,
+            "intent": {
+                "name": "ProgrammingLanguages",
+                "slots": {"LanguageName": None},
+                "state": "InProgress",
+                "confirmationState": "None",
+            },
+        },
+        {
+            "interpretationSource": "Lex",
+            "intent": {
+                "name": "FallbackIntent",
+                "slots": {},
+                "state": "InProgress",
+                "confirmationState": "None",
+            },
+        },
+        {
+            "interpretationSource": "Lex",
+            "nluConfidence": 0.45,
+            "intent": {
+                "name": "CourseInfo",
+                "slots": {"CourseName": None, "InfoType": None},
+                "state": "InProgress",
+                "confirmationState": "None",
+            },
+        },
+    ],
+    "bot": {
+        "name": "Netleap_123",
+        "version": "DRAFT",
+        "localeId": "en_US",
+        "id": "RQ6Y75A5E4",
+        "aliasId": "TSTALIASID",
+        "aliasName": "TestBotAlias",
+    },
+    "responseContentType": "text/plain; charset=utf-8",
+    "proposedNextState": {
+        "prompt": {"attempt": "Initial"},
+        "intent": {
+            "name": "DemoRequest",
+            "slots": {"CourseName": None, "UserName": None, "PreferredDate": None},
+            "state": "InProgress",
+            "confirmationState": "None",
+        },
+        "dialogAction": {"type": "ElicitSlot", "slotToElicit": "CourseName"},
+    },
+    "sessionState": {
+        "originatingRequestId": "18691a5d-ae8f-4fb1-a1ee-2b0a35965a17",
+        "sessionAttributes": {},
+        "intent": {
+            "name": "DemoRequest",
+            "slots": {"CourseName": None, "UserName": None, "PreferredDate": None},
+            "state": "InProgress",
+            "confirmationState": "None",
+        },
+    },
+    "messageVersion": "1.0",
+    "invocationSource": "DialogCodeHook",
+    "transcriptions": [
+        {
+            "resolvedContext": {"intent": "DemoRequest"},
+            "resolvedSlots": {},
+            "transcriptionConfidence": 1.0,
+            "transcription": "demo",
+        }
+    ],
+}

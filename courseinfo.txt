@@ -1,0 +1,236 @@
+import logging
+
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def handle_course_info(slots, user_input):
+    try:
+        # Safely extract slot values
+        course_name = (
+            slots.get("CourseName", {}).get("value", {}).get("interpretedValue", "")
+            if slots and slots.get("CourseName")
+            else ""
+        )
+        info_type = (
+            slots.get("InfoType", {}).get("value", {}).get("interpretedValue", "").lower()
+            if slots and slots.get("InfoType")
+            else ""
+        )
+
+        # If user says "no", close the conversation
+        if user_input.lower() == "no":
+            return {
+                "sessionState": {
+                    "dialogAction": {
+                        "type": "Close",
+                    },
+                    "intent": {
+                        "name": "CourseInfo",
+                        "state": "Fulfilled"
+                    }
+                },
+                "messages": [
+                    {
+                        "contentType": "PlainText",
+                        "content": "Thank you for your interest! Have a great day!"
+                    }
+                ]
+            }
+
+        # If user wants to ask about another course
+        if user_input.lower() in ["another course", "new course"]:
+            return {
+                "sessionState": {
+                    "dialogAction": {
+                        "type": "ElicitSlot",
+                        "slotToElicit": "CourseName"
+                    },
+                    "intent": {
+                        "name": "CourseInfo",
+                        "slots": {**slots, "CourseName": None},  # Reset CourseName
+                        "state": "InProgress"
+                    }
+                },
+                "messages": [
+                    {
+                        "contentType": "PlainText",
+                        "content": "Sure! Which course would you like to know about?"
+                    }
+                ]
+            }
+
+        # If CourseName is missing, ask for it
+        if not course_name:
+            return {
+                "sessionState": {
+                    "dialogAction": {
+                        "type": "ElicitSlot",
+                        "slotToElicit": "CourseName"
+                    },
+                    "intent": {
+                        "name": "CourseInfo",
+                        "slots": slots,
+                        "state": "InProgress"
+                    }
+                },
+                "messages": [
+                    {
+                        "contentType": "PlainText",
+                        "content": "Which course would you like to know about?"
+                    }
+                ]
+            }
+
+        # If InfoType is missing, ask for it
+        if not info_type:
+            return {
+                "sessionState": {
+                    "dialogAction": {
+                        "type": "ElicitSlot",
+                        "slotToElicit": "InfoType"
+                    },
+                    "intent": {
+                        "name": "CourseInfo",
+                        "slots": slots,
+                        "state": "InProgress"
+                    }
+                },
+                "messages": [
+                    {
+                        "contentType": "PlainText",
+                        "content": "What details would you like to know (duration, fees, prerequisites, or syllabus)?"
+                    }
+                ]
+            }
+
+        # Define course information
+        course_info = {
+            "aws": {
+                "duration": "The AWS course duration is 2 months.",
+                "fees": "The AWS course fees are ₹19,266.",
+                "prerequisites": "Prerequisites for AWS include basic networking and Linux knowledge.",
+                "syllabus": "The AWS syllabus covers EC2, S3, IAM, and more."
+            },
+            "data science": {
+                "duration": "The Data Science course duration is 4 months.",
+                "fees": "The Data Science course fees are ₹22,500.",
+                "prerequisites": "Prerequisites for Data Science include basic Python and statistics.",
+                "syllabus": "The Data Science syllabus covers Python, Machine Learning, and Data Visualization."
+            },
+            "cyber security": {
+                "duration": "The Cyber Security course duration is 3 months.",
+                "fees": "The Cyber Security course fees are ₹18,000.",
+                "prerequisites": "Prerequisites for Cyber Security include networking basics and Linux knowledge.",
+                "syllabus": "The Cyber Security syllabus covers threat analysis, firewalls, and encryption."
+            },
+            "ccna": {
+                "duration": "The CCNA course duration is 1.5 months.",
+                "fees": "The CCNA course fees are ₹14,000.",
+                "prerequisites": "Prerequisites for CCNA include basic networking knowledge.",
+                "syllabus": "The CCNA syllabus covers routing, switching, and network protocols."
+            },
+            "rhce": {
+                "duration": "The RHCE course duration is 2 months.",
+                "fees": "The RHCE course fees are ₹14,696.",
+                "prerequisites": "Prerequisites for RHCE include Linux knowledge and basic system administration skills.",
+                "syllabus": "The RHCE syllabus covers system administration, automation, and security in Red Hat Linux environments."
+            }
+        }
+
+        course_details = course_info.get(course_name.lower(), {})
+        
+        # Provide the specific info based on user request (duration, fees, prerequisites, syllabus)
+        response = course_details.get(info_type, f"Sorry, I don't have details for {info_type} of the {course_name} course.")
+        
+        # Ask for more info after providing a response
+        return {
+            "sessionState": {
+                "dialogAction": {
+                    "type": "ElicitSlot",
+                    "slotToElicit": "InfoType"
+                },
+                "intent": {
+                    "name": "CourseInfo",
+                    "slots": slots,
+                    "state": "InProgress"
+                }
+            },
+            "messages": [
+                {
+                    "contentType": "PlainText",
+                    "content": response
+                },
+                {
+                    "contentType": "PlainText",
+                    "content": "Is there anything else you'd like to know about the course? (duration, fees, prerequisites, syllabus) Or type 'another course' to ask about a new one or type no."
+                }
+            ]
+        }
+    except Exception as e:
+        logger.error("Exception occurred while processing CourseInfo.", exc_info=True)
+        return {
+            "sessionState": {
+                "dialogAction": {
+                    "type": "Close",
+                },
+                "intent": {
+                    "name": "CourseInfo",
+                    "state": "Failed"
+                }
+            },
+            "messages": [
+                {
+                    "contentType": "PlainText",
+                    "content": "Sorry, there was an error processing your request. Please try again later."
+                }
+            ]
+        }
+
+def lambda_handler(event, context):
+    try:
+        logger.info(f"Received event: {event}")
+
+        intent_name = event["sessionState"]["intent"]["name"]
+        slots = event["sessionState"]["intent"].get("slots", {})
+        user_input = event["inputTranscript"]
+
+        if intent_name == "CourseInfo":
+            return handle_course_info(slots, user_input)
+        else:
+            return {
+                "sessionState": {
+                    "dialogAction": {
+                        "type": "Close",
+                    },
+                    "intent": {
+                        "name": intent_name,
+                        "state": "Failed"
+                    }
+                },
+                "messages": [
+                    {
+                        "contentType": "PlainText",
+                        "content": "Sorry, I couldn't understand your request."
+                    }
+                ]
+            }
+    except Exception as e:
+        logger.error("Error handling the Lambda function", exc_info=True)
+        return {
+            "sessionState": {
+                "dialogAction": {
+                    "type": "Close",
+                },
+                "intent": {
+                    "name": "FallbackIntent",
+                    "state": "Failed"
+                }
+            },
+            "messages": [
+                {
+                    "contentType": "PlainText",
+                    "content": "An unexpected error occurred. Please try again later."
+                }
+            ]
+        }

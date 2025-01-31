@@ -1,0 +1,104 @@
+import json
+from datetime import datetime
+
+def lambda_handler(event, context):
+    # Extract intent name and slots
+    intent_name = event.get("sessionState", {}).get("intent", {}).get("name")
+    slots = event.get("sessionState", {}).get("intent", {}).get("slots", {})
+    
+    # Process only the DemoRequest intent
+    if intent_name == "DemoRequest":
+        return handle_demo_request(slots, event)
+
+def handle_demo_request(slots, event):
+    # Extract slot values or assign default responses
+    course_name = get_slot_value(slots, "CourseName", default="Not Provided")
+    preferred_date = get_slot_value(slots, "PreferredDate", default="Not Provided")
+    user_name = get_slot_value(slots, "UserName", default="Not Provided")
+    
+    # Validate date
+    if preferred_date != "Not Provided":
+        validation_response = validate_date(preferred_date, slots, event)
+        if validation_response:  # Return if validation fails
+            return validation_response
+
+    # Handle missing slots
+    if course_name == "Not Provided":
+        return elicit_slot("CourseName", "Which course would you like to book a demo for?", slots, event)
+    if preferred_date == "Not Provided":
+        return elicit_slot("PreferredDate", "When would you like to attend the demo? (DD-MM-YYYY)", slots, event)
+    if user_name == "Not Provided":
+        return elicit_slot("UserName", "May I know your name, please?", slots, event)
+    
+    # Fulfill the request
+    return close_intent(
+        f"Thank you, {user_name}! Your demo for {course_name} is scheduled for {preferred_date}. We look forward to seeing you!"
+    )
+
+def get_slot_value(slots, slot_name, default="Not Provided"):
+    """Extract slot value or return a default value."""
+    slot = slots.get(slot_name, {})
+    if slot and "value" in slot and "interpretedValue" in slot["value"]:
+        return slot["value"]["interpretedValue"]
+    return default
+
+def validate_date(preferred_date, slots, event):
+    """Validate the provided date."""
+    try:
+        demo_date = datetime.strptime(preferred_date, "%d-%m-%Y")
+        if demo_date < datetime.now():
+            return elicit_slot(
+                "PreferredDate",
+                "The date you provided is in the past. Please select a future date.",
+                slots,
+                event
+            )
+    except ValueError:
+        return elicit_slot(
+            "PreferredDate",
+            "Invalid date format. Please provide a date in DD-MM-YYYY format.",
+            slots,
+            event
+        )
+    return None
+
+def elicit_slot(slot_to_elicit, message, slots, event):
+    """Elicit a slot from the user."""
+    return {
+        "sessionState": {
+            "sessionAttributes": event.get("sessionState", {}).get("sessionAttributes", {}),
+            "intent": {
+                "name": event.get("sessionState", {}).get("intent", {}).get("name"),
+                "slots": slots,
+                "state": "InProgress"
+            }
+        },
+        "dialogAction": {
+            "type": "ElicitSlot",
+            "slotToElicit": slot_to_elicit,
+            "message": {
+                "contentType": "PlainText",
+                "content": message
+            }
+        }
+    }
+
+def close_intent(message):
+    """Close the intent after fulfillment."""
+    return {
+        "sessionState": {
+            "sessionAttributes": {},
+            "intent": {
+                "name": "DemoRequest",
+                "state": "Fulfilled"
+            }
+        },
+        "dialogAction": {
+            "type": "Close",
+            "fulfillmentState": "Fulfilled",
+            "message": {
+                "contentType": "PlainText",
+                "content": message
+            }
+        }
+    }

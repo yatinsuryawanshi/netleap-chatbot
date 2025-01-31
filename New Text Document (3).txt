@@ -1,0 +1,64 @@
+const express = require('express');
+const bodyParser = require('body-parser');
+const cors = require('cors');
+
+const app = express();
+const PORT = 3000;
+
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
+
+// Dummy data
+const services = [
+    {
+        id: 1,
+        title: 'Software Development Courses',
+        description: 'C, C++, Java, Python.',
+    },
+    {
+        id: 2,
+        title: 'High-end Certification Programs',
+        description: 'Hardware/Networking, Cisco Technologies, Redhat Linux, AWS, Ethical Hacking, etc.',
+    },
+    {
+        id: 3,
+        title: 'IT Consulting',
+        description: 'Expert advice to drive digital transformation across your organization.',
+    },
+];
+
+const aboutUs = {
+    title: 'Welcome to Neatleap IT Solutions',
+    description: 'We offer the industry\'s most respected Linux Training and Certification programs and high-end IT training.',
+};
+
+// Routes
+app.get('/', (req, res) => {
+    res.send('Welcome to Neatleap IT Solutions API');
+});
+
+app.get('/services', (req, res) => {
+    res.json(services);
+});
+
+app.get('/about', (req, res) => {
+    res.json(aboutUs);
+});
+
+app.post('/contact', (req, res) => {
+    const { name, email, message } = req.body;
+
+    if (!name || !email || !message) {
+        return res.status(400).json({ error: 'All fields are required.' });
+    }
+
+    // You can integrate with an email service or database here
+    console.log('Contact Form Submitted:', { name, email, message });
+    res.status(200).json({ message: 'Your message has been received. Thank you!' });
+});
+
+// Start the server
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+});

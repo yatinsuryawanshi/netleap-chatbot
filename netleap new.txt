@@ -1,0 +1,316 @@
+import json
+import logging
+import re
+import uuid
+from datetime import datetime
+import boto3
+
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# DynamoDB client
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('DemoRequests')
+
+def lambda_handler(event, context):
+    """
+    Lambda function to handle CourseInfo, DemoRequest, ContactInfo, HelpIntent, and other intents.
+    """
+    # Log the incoming event for debugging
+    logger.info("Received event: %s", json.dumps(event))
+
+    # Extract intent and confirmation state
+    intent_name = event['sessionState']['intent']['name']
+    confirmation_state = event['sessionState']['intent'].get('confirmationState', 'None')
+    intent_state = event['sessionState']['intent'].get('state', 'None')
+    
+    if intent_name == "CourseInfo":
+        return handle_course_info(event)
+    elif intent_name == "DemoRequest":
+        return handle_demo_request(event)
+    elif intent_name == "ContactInfo":
+        return handle_contact_info()
+    elif intent_name == "HelpIntent":
+        return handle_help_intent()
+    else:
+        logger.error("Unexpected intent: %s", intent_name)
+        return close_intent_response(event, "Failed", "Sorry, I couldn't process your request. Please try again.")
+
+def handle_course_info(event):
+    """
+    Handles the CourseInfo intent by returning course details.
+    """
+    slots = event['sessionState']['intent'].get('slots', {})
+    course_name = get_slot_value(slots, "CourseName")
+    info_type = get_slot_value(slots, "InfoType")
+
+    # Predefined course information
+    course_info = {
+        "aws": {
+            "duration": "2 months",
+            "fees": "₹19,266",
+            "prerequisites": "Basic networking and Linux knowledge",
+            "syllabus": "EC2, S3, IAM, and more"
+        },
+        "data science": {
+            "duration": "4 months",
+            "fees": "₹22,500",
+            "prerequisites": "Basic Python and statistics",
+            "syllabus": "Python, Machine Learning, and Data Visualization"
+        },
+        "cyber security": {
+            "duration": "3 months",
+            "fees": "₹18,000",
+            "prerequisites": "Networking basics and Linux knowledge",
+            "syllabus": "Threat analysis, firewalls, encryption"
+        },
+        "ccna": {
+            "duration": "1.5 months",
+            "fees": "₹14,000",
+            "prerequisites": "Basic networking knowledge",
+            "syllabus": "Routing, switching, network protocols"
+        },
+        "rhce": {
+            "duration": "2 months",
+            "fees": "₹14,696",
+            "prerequisites": "Linux knowledge and basic system administration skills",
+            "syllabus": "System administration, automation, and security"
+        }
+    }
+
+    if not course_name:
+        return elicit_slot_response(event, "CourseName", "Which course would you like to know about?")
+    
+    course_name = course_name.lower()
+    if course_name not in course_info:
+        return build_response(
+            "CourseInfo",
+            "Failed",
+            "Sorry, I don't have information about that course. Please check the course name again."
+        )
+    
+    if not info_type:
+        return elicit_slot_response(event, "InfoType", "What details do you need (duration, fees, prerequisites, or syllabus)?")
+    
+    course_data = course_info.get(course_name, {})
+    details = course_data.get(info_type.lower(), "Sorry, I don't have that information.")
+    
+    return build_response(
+        "CourseInfo",
+        "Fulfilled",
+        details
+    )
+
+def handle_demo_request(event):
+    """
+    Handles the DemoRequest intent by collecting necessary data and saving it to DynamoDB.
+    """
+    slots = event['sessionState']['intent'].get('slots', {})
+
+    # Extract values
+    course_name = get_slot_value(slots, "CourseName")
+    preferred_date = get_slot_value(slots, "PreferredDate")
+    user_name = get_slot_value(slots, "UserName")
+    contact_number = get_slot_value(slots, "ContactNumber")
+    preferred_session = get_slot_value(slots, "PreferredSession")
+
+    # Validation
+    if not course_name:
+        return elicit_slot_response(event, "CourseName", "Which course would you like to schedule a demo for?")
+    if not preferred_date:
+        return elicit_slot_response(event, "PreferredDate", "What date works best for your demo in the format DD-MM-YYYY?")
+    if not user_name:
+        return elicit_slot_response(event, "UserName", "Could you please provide your name?")
+    if not contact_number or not is_valid_contact_number(contact_number):
+        return elicit_slot_response(event, "ContactNumber", "Please provide a valid 10-digit contact number.")
+    if not preferred_session:
+        return elicit_slot_response(event, "PreferredSession", "Please choose a valid session: Morning (10-12) or Evening (5-7).")
+
+    # Date normalization and validation
+    if preferred_date:
+        preferred_date = normalize_date(preferred_date)
+        if not is_valid_future_date(preferred_date):
+            return elicit_slot_response(event, "PreferredDate", "The date you provided is in the past. Please provide a future date in the format DD-MM-YYYY.")
+
+    # Handle confirmation
+    confirmation_state = event['sessionState']['intent'].get('confirmationState', 'None')
+    if confirmation_state == "None":
+        return confirm_request(event, course_name, preferred_date, user_name, contact_number, preferred_session)
+    elif confirmation_state == "Confirmed":
+        request_id = str(uuid.uuid4())  # Generate a unique RequestID
+        save_to_dynamodb(request_id, course_name, preferred_date, user_name, contact_number, preferred_session)
+        return close_intent_response(
+            event,
+            "Fulfilled",
+            "Thank you. We are eagerly awaiting your demo session. Have a wonderful day!"
+        )
+    elif confirmation_state == "Denied":
+        return close_intent_response(event, "Failed", "It's fine! Feel free to reach out to us anytime.")
+
+def handle_contact_info():
+    """
+    Handles the ContactInfo intent by returning predefined contact information.
+    """
+    contact_message = (
+        "Contact No: 8329349481\n"
+        "Email Address: nits@netleapsolutions.com\n"
+        "Location: 1st Floor, Avdhoot Aadhar Complex, Opp. ViharMisal, Near-Luthra Agency, Old Gangapur Naka, Gangapur Road, Nashik, Maharashtra 422005"
+    )
+    return build_response(
+        "ContactInfo",
+        "Fulfilled",
+        contact_message
+    )
+
+def handle_help_intent():
+    """
+    Handles the HelpIntent by providing a list of available features.
+    """
+    features = [
+        "Course Information",
+        "Contact Details",
+        "Request a Demo"
+    ]
+    message = "I can assist with the following:\n" + "\n".join([f"- {f}" for f in features])
+    return build_response("HelpIntent", "Fulfilled", message)
+
+def get_slot_value(slots, slot_name):
+    """
+    Safely extract slot value.
+    """
+    return slots.get(slot_name, {}).get("value", {}).get("interpretedValue") if slots.get(slot_name) else None
+
+def normalize_date(date_str):
+    """
+    Normalize the date to DD-MM-YYYY format.
+    """
+    try:
+        parts = date_str.strip().split('-')
+        if len(parts) == 3 and len(parts[0]) == 4:  # YYYY-MM-DD format
+            return f"{parts[2]}-{parts[1]}-{parts[0]}"  # Convert to DD-MM-YYYY
+    except Exception as e:
+        logger.error("Error normalizing date: %s", e)
+    return date_str
+
+def is_valid_future_date(date_str):
+    """
+    Validate that the date is in the future.
+    """
+    try:
+        demo_date = datetime.strptime(date_str, "%d-%m-%Y")
+        return demo_date > datetime.now()
+    except ValueError:
+        logger.error("Invalid date format provided: %s", date_str)
+        return False
+
+def is_valid_contact_number(contact_number):
+    """
+    Validate the contact number is exactly 10 digits.
+    """
+    contact_number = contact_number.strip()
+    return bool(re.match(r"^\d{10}$", contact_number))
+
+def save_to_dynamodb(request_id, course_name, preferred_date, user_name, contact_number, preferred_session):
+    """
+    Save the demo request data to DynamoDB.
+    """
+    try:
+        table.put_item(
+            Item={
+                'RequestID': request_id,  # Unique identifier for the request
+                'CourseName': course_name,
+                'PreferredDate': preferred_date,
+                'UserName': user_name,
+                'ContactNumber': contact_number,
+                'PreferredSession': preferred_session
+            }
+        )
+        logger.info("Successfully saved request to DynamoDB with RequestID: %s", request_id)
+    except Exception as e:
+        logger.error("Error saving to DynamoDB: %s", e)
+
+def confirm_request(event, course_name, preferred_date, user_name, contact_number, preferred_session):
+    """
+    Custom confirmation asking user if they want to proceed.
+    """
+    return {
+        "sessionState": {
+            "dialogAction": {
+                "type": "ConfirmIntent"
+            },
+            "intent": event['sessionState']['intent']
+        },
+        "messages": [
+            {
+                "contentType": "PlainText",
+                "content": f"Thank you, {user_name}. You have requested a demo for {course_name} on {preferred_date} during the {preferred_session} session. Can I go ahead with your request?"
+            }
+        ]
+    }
+
+def elicit_slot_response(event, slot_to_elicit, message):
+    """
+    Helper function to elicit a specific slot from the user.
+    """
+    logger.info("Eliciting slot: %s with message: %s", slot_to_elicit, message)
+    return {
+        "sessionState": {
+            "dialogAction": {
+                "type": "ElicitSlot",
+                "slotToElicit": slot_to_elicit
+            },
+            "intent": event['sessionState']['intent']
+        },
+        "messages": [
+            {
+                "contentType": "PlainText",
+                "content": message
+            }
+        ]
+    }
+
+def close_intent_response(event, fulfillment_state, message):
+    """
+    Helper function to close the intent with a message.
+    """
+    logger.info("Closing intent with fulfillment state: %s and message: %s", fulfillment_state, message)
+    return {
+        "sessionState": {
+            "dialogAction": {
+                "type": "Close"
+            },
+            "intent": {
+                "name": event['sessionState']['intent']['name'],
+                "state": fulfillment_state
+            }
+        },
+        "messages": [
+            {
+                "contentType": "PlainText",
+                "content": message
+            }
+        ]
+    }
+
+def build_response(intent_name, fulfillment_state, message):
+    """
+    Helper function to build a response for different intents.
+    """
+    return {
+        "sessionState": {
+            "dialogAction": {
+                "type": "Close"
+            },
+            "intent": {
+                "name": intent_name,
+                "state": fulfillment_state
+            }
+        },
+        "messages": [
+            {
+                "contentType": "PlainText",
+                "content": message
+            }
+        ]
+    }

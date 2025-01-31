@@ -1,0 +1,200 @@
+import json
+import logging
+import re
+import uuid
+from datetime import datetime
+import boto3
+
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# DynamoDB client
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('DemoRequests')
+
+def lambda_handler(event, context):
+    """
+    Lambda function to handle DemoRequest intent with defensive slot value extraction, logging, and saving to DynamoDB.
+    """
+    # Log the incoming event for debugging
+    logger.info("Received event: %s", json.dumps(event))
+
+    # Extract intent and confirmation state
+    intent_name = event['sessionState']['intent']['name']
+    confirmation_state = event['sessionState']['intent'].get('confirmationState', 'None')
+    intent_state = event['sessionState']['intent'].get('state', 'None')
+    
+    if intent_name == "DemoRequest":
+        slots = event['sessionState']['intent'].get('slots', {})
+
+        # Extract slots
+        course_name = get_slot_value(slots, "CourseName")
+        preferred_date = get_slot_value(slots, "PreferredDate")
+        user_name = get_slot_value(slots, "UserName")
+        contact_number = get_slot_value(slots, "ContactNumber")
+        preferred_session = get_slot_value(slots, "PreferredSession")
+
+        logger.info("Extracted slots - CourseName: %s, PreferredDate: %s, UserName: %s, ContactNumber: %s, PreferredSession: %s", 
+                    course_name, preferred_date, user_name, contact_number, preferred_session)
+
+        # Date normalization and validation
+        if preferred_date:
+            preferred_date = normalize_date(preferred_date)
+            logger.info("Normalized PreferredDate: %s", preferred_date)
+            if not is_valid_future_date(preferred_date):
+                return elicit_slot_response(event, "PreferredDate", "The date you provided is in the past. Please provide a future date in the format DD-MM-YYYY.")
+        
+        # Validate Contact Number (Ensure it is 10 digits)
+        if contact_number and not is_valid_contact_number(contact_number):
+            return elicit_slot_response(event, "ContactNumber", "Please provide a valid 10-digit contact number.")
+        
+        # Check for missing slots
+        if not course_name:
+            return elicit_slot_response(event, "CourseName", "Which course would you like to schedule a demo for?")
+        if not preferred_date:
+            return elicit_slot_response(event, "PreferredDate", "What date works best for your demo in the format DD-MM-YYYY?")
+        if not user_name:
+            return elicit_slot_response(event, "UserName", "Could you please provide your name?")
+        if not contact_number:
+            return elicit_slot_response(event, "ContactNumber", "Could you please provide your contact number?")
+        if not preferred_session:
+            return elicit_slot_response(event, "PreferredSession", "Please choose a valid session: Morning (10-12) or Evening (5-7).")
+        
+        # Handle confirmation
+        if confirmation_state == "None":
+            return confirm_request(event, course_name, preferred_date, user_name, contact_number, preferred_session)
+        elif confirmation_state == "Confirmed":
+            # Save to DynamoDB
+            request_id = str(uuid.uuid4())  # Generate a unique RequestID
+            save_to_dynamodb(request_id, course_name, preferred_date, user_name, contact_number, preferred_session)
+            return close_intent_response(
+                event,
+                "Fulfilled",
+                "Thank you. We Are Eagerly Waiting To See You In Our Institution. Have a Wonderful Day Friend!"
+            )
+        elif confirmation_state == "Denied":
+            return close_intent_response(event, "Failed", "It's fine! Feel free to reach out to us anytime, and we'll definitely help you. :)")
+    
+    # Handle unexpected intents
+    logger.error("Unexpected intent: %s", intent_name)
+    return close_intent_response(event, "Failed", "Sorry, I couldn't process your request. Please try again.")
+
+def get_slot_value(slots, slot_name):
+    """
+    Safely extract slot value.
+    """
+    return slots.get(slot_name, {}).get("value", {}).get("interpretedValue") if slots.get(slot_name) else None
+
+def normalize_date(date_str):
+    """
+    Normalize the date to DD-MM-YYYY format.
+    """
+    try:
+        parts = date_str.strip().split('-')
+        if len(parts) == 3 and len(parts[0]) == 4:  # YYYY-MM-DD format
+            return f"{parts[2]}-{parts[1]}-{parts[0]}"  # Convert to DD-MM-YYYY
+    except Exception as e:
+        logger.error("Error normalizing date: %s", e)
+    return date_str
+
+def is_valid_future_date(date_str):
+    """
+    Validate that the date is in the future.
+    """
+    try:
+        demo_date = datetime.strptime(date_str, "%d-%m-%Y")
+        return demo_date > datetime.now()
+    except ValueError:
+        logger.error("Invalid date format provided: %s", date_str)
+        return False
+
+def is_valid_contact_number(contact_number):
+    """
+    Validate the contact number is exactly 10 digits.
+    """
+    # Regex to match 10 digits
+    contact_number = contact_number.strip()
+    return bool(re.match(r"^\d{10}$", contact_number))
+
+def save_to_dynamodb(request_id, course_name, preferred_date, user_name, contact_number, preferred_session):
+    """
+    Save the demo request data to DynamoDB.
+    """
+    try:
+        table.put_item(
+            Item={
+                'RequestID': request_id,  # Unique identifier for the request
+                'CourseName': course_name,
+                'PreferredDate': preferred_date,
+                'UserName': user_name,
+                'ContactNumber': contact_number,
+                'PreferredSession': preferred_session
+            }
+        )
+        logger.info("Successfully saved request to DynamoDB with RequestID: %s", request_id)
+    except Exception as e:
+        logger.error("Error saving to DynamoDB: %s", e)
+
+def confirm_request(event, course_name, preferred_date, user_name, contact_number, preferred_session):
+    """
+    Custom confirmation asking user if they want to proceed.
+    """
+    return {
+        "sessionState": {
+            "dialogAction": {
+                "type": "ConfirmIntent"
+            },
+            "intent": event['sessionState']['intent']
+        },
+        "messages": [
+            {
+                "contentType": "PlainText",
+                "content": f"Thank you, {user_name}. You have requested a demo for {course_name} on {preferred_date} during the {preferred_session} session. Can I go ahead with your request?"
+            }
+        ]
+    }
+
+def elicit_slot_response(event, slot_to_elicit, message):
+    """
+    Helper function to elicit a specific slot from the user.
+    """
+    logger.info("Eliciting slot: %s with message: %s", slot_to_elicit, message)
+    return {
+        "sessionState": {
+            "dialogAction": {
+                "type": "ElicitSlot",
+                "slotToElicit": slot_to_elicit
+            },
+            "intent": event['sessionState']['intent']
+        },
+        "messages": [
+            {
+                "contentType": "PlainText",
+                "content": message
+            }
+        ]
+    }
+
+def close_intent_response(event, fulfillment_state, message):
+    """
+    Helper function to close the intent with a message.
+    """
+    logger.info("Closing intent with fulfillment state: %s and message: %s", fulfillment_state, message)
+    return {
+        "sessionState": {
+            "dialogAction": {
+                "type": "Close"
+            },
+            "intent": {
+                "name": event['sessionState']['intent']['name'],
+                "state": fulfillment_state
+            }
+        },
+        "messages": [
+            {
+                "contentType": "PlainText",
+                "content": message
+            }
+        ]
+    }
